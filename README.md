@@ -158,6 +158,20 @@ bash ./run_bot.sh
 python telegram_bot/bot.py
 ```
 
+Запуск бота в Docker короткими скриптами:
+
+```bash
+# Windows (PowerShell)
+./run_bot_docker.ps1           # поднять бота
+./run_bot_docker.ps1 --logs    # поднять и показать логи
+./run_bot_docker.ps1 --build   # пересобрать и поднять
+
+# Linux/macOS
+bash ./run_bot_docker.sh               # поднять бота
+bash ./run_bot_docker.sh --logs        # поднять и показать логи
+bash ./run_bot_docker.sh --build       # пересобрать и поднять
+```
+
 ### Запуск с Docker
 ```bash
 docker-compose up --build
