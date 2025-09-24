@@ -99,7 +99,9 @@ def register_handlers(bot):
                                 bot.delete_message(chat_id, message_id)
                             except Exception:
                                 pass
-                            bot.send_message(chat_id, message, parse_mode='HTML')
+                            # Добавляем кнопку "В меню" к результату парсинга
+                            from .keyboards import main_menu
+                            bot.send_message(chat_id, message, parse_mode='HTML', reply_markup=main_menu())
 
                     result = parser_runner.run_parser(callback)
                     if not result['success']:
