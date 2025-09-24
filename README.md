@@ -44,7 +44,7 @@
 ## 🏗️ Архитектура
 
 ```
-VB-INTENSIV/
+avito-parser/
 ├── 📁 core/                    # Ядро парсера
 │   ├── base_parser.py         # Базовый класс парсера
 │   ├── playwright_parser.py   # Playwright парсер
@@ -54,6 +54,11 @@ VB-INTENSIV/
 │   ├── avito_processor.py     # Обработчик HTML
 │   ├── antibot_toolkit.py     # Антибот инструменты
 │   └── browser_profiles_2025.py # Профили браузеров
+├── 📁 telegram_bot/           # Telegram-бот
+│   ├── bot.py                 # Главный файл бота
+│   ├── handlers.py            # Обработчики команд/колбэков
+│   ├── keyboards.py           # Инлайн-клавиатуры
+│   └── parser_runner.py       # Запуск парсера в отдельном потоке
 ├── 📁 database/               # База данных
 │   ├── models.py              # Модели данных
 │   └── database_manager.py    # Менеджер БД
@@ -64,6 +69,8 @@ VB-INTENSIV/
 ├── 📁 logs/                   # Логи
 ├── 🐳 Dockerfile              # Docker образ
 ├── 🐳 docker-compose.yml      # Docker Compose
+├── run_playwright.py          # Быстрый запуск парсера (Playwright)
+├── run_bot.ps1 / run_bot.sh   # Лончеры бота (Win/Linux)
 └── 🚀 main.py                 # Точка входа
 ```
 
@@ -109,6 +116,12 @@ TARGET_URL=https://www.avito.ru/all/tovary_dlya_kompyutera/komplektuyuschie/vide
 PARSER_MODE=playwright
 USE_ANTIBOT_TRICKS=false
 LOG_LEVEL=INFO
+# Режим браузера (особенно важно для Docker)
+USE_HEADLESS=true
+BROWSER_CHANNEL=chromium
+# Telegram Bot
+TELEGRAM_BOT_TOKEN=YOUR_TOKEN_HERE
+TELEGRAM_ADMIN_ID=
 ```
 
 ## 🏃‍♂️ Быстрый старт
@@ -125,6 +138,24 @@ python run_playwright.py
 ### Запуск основного скрипта
 ```bash
 python main.py
+```
+
+### Telegram-бот
+
+Запуск бота локально:
+
+```bash
+# Windows (PowerShell из папки avito-parser)
+./run_bot.ps1
+
+# Linux/macOS
+bash ./run_bot.sh
+```
+
+Либо вручную из активированного venv:
+
+```bash
+python telegram_bot/bot.py
 ```
 
 ### Запуск с Docker
@@ -221,6 +252,85 @@ docker-compose logs -f
 # Остановка
 docker-compose down
 ```
+
+### Мини-гайд по деплою на VPS
+
+Коротко:
+
+1) Установите Docker + Compose на Ubuntu 24.04
+```bash
+sudo apt-get update && sudo apt-get install -y ca-certificates curl git
+curl -fsSL https://get.docker.com -o get-docker.sh && sudo sh get-docker.sh
+sudo apt-get install -y docker-compose-plugin
+```
+
+2) Клонируйте проект и настройте `.env` (важно для Docker):
+```env
+PARSER_MODE=playwright
+USE_ANTIBOT_TRICKS=false
+USE_HEADLESS=true
+BROWSER_CHANNEL=chromium
+TELEGRAM_BOT_TOKEN=ВАШ_ТОКЕН
+```
+
+3) Создайте папки и права:
+```bash
+mkdir -p database logs trash cookies
+chmod 777 database logs trash cookies
+```
+
+4) Соберите и запустите:
+```bash
+docker compose build
+docker compose up -d
+```
+
+5) Проверка:
+```bash
+docker compose logs -f --tail=100
+```
+
+Подробнее см. файл `DEPLOY.md` в корне репозитория.
+
+#### Полезные команды Docker
+
+```bash
+# Применить изменения из .env без пересборки образов
+docker compose up -d --force-recreate
+
+# Логи всех сервисов
+docker compose logs -f --tail=100
+
+# Перезапуск только бота
+docker compose restart avito-parser-bot
+```
+
+### Docker: запуск бота
+
+В `docker-compose.yml` уже добавлен сервис `avito-parser-bot`:
+
+```yaml
+services:
+  avito-parser-bot:
+    build: .
+    container_name: avito-parser-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./database:/app/database
+      - ./logs:/app/logs
+      - ./trash:/app/trash
+    command: python telegram_bot/bot.py
+```
+
+После заполнения `TELEGRAM_BOT_TOKEN` в `.env` запустите:
+
+```bash
+docker-compose up -d --build avito-parser-bot
+```
+
+Примечание: внутри контейнера браузер запускается в headless-режиме. Если нужен headed-режим, потребуется X-сервер (например, `xvfb-run`), что в этой сборке по умолчанию не используется.
 
 ## 🔧 API
 

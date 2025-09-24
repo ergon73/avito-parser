@@ -1,0 +1,236 @@
+При развертывании на Ubuntu 24.04 Server потребуется предварительная настройка. Вот что нужно сделать:
+
+## Подготовка Ubuntu VPS
+
+### 1. Установка Docker и Docker Compose
+```bash
+# Обновление системы
+sudo apt update && sudo apt upgrade -y
+
+# Установка Docker
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+
+# Добавление пользователя в группу docker
+sudo usermod -aG docker $USER
+
+# Установка Docker Compose
+sudo apt install docker-compose-plugin -y
+
+# Проверка
+docker --version
+docker compose version
+```
+
+### 2. Системные зависимости для Playwright
+
+**КРИТИЧНО:** Playwright требует множество системных библиотек для работы браузеров. Без них контейнер упадет с ошибкой.
+
+```bash
+# Базовые зависимости
+sudo apt install -y \
+    wget \
+    ca-certificates \
+    fonts-liberation \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libatspi2.0-0 \
+    libcups2 \
+    libdbus-1-3 \
+    libdrm2 \
+    libgbm1 \
+    libgtk-3-0 \
+    libnspr4 \
+    libnss3 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxkbcommon0 \
+    libxrandr2 \
+    xdg-utils
+
+# Дополнительные для headless режима
+sudo apt install -y \
+    libnss3-dev \
+    libxss1 \
+    libasound2-dev
+```
+
+### 3. Обновите Dockerfile для Linux
+
+```dockerfile
+FROM python:3.11-slim
+
+# Установка системных зависимостей для Playwright
+RUN apt-get update && apt-get install -y \
+    wget \
+    gnupg \
+    ca-certificates \
+    fonts-liberation \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libatspi2.0-0 \
+    libcups2 \
+    libdbus-1-3 \
+    libdrm2 \
+    libgbm1 \
+    libgtk-3-0 \
+    libnspr4 \
+    libnss3 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxkbcommon0 \
+    libxrandr2 \
+    xdg-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Установка Playwright с зависимостями
+RUN playwright install chromium
+RUN playwright install-deps chromium
+
+COPY . .
+
+# Создание директорий с правильными правами
+RUN mkdir -p database logs trash cookies && \
+    chmod -R 777 database logs trash cookies
+
+CMD ["python", "telegram_bot/bot.py"]
+```
+
+### 4. Настройка прав доступа
+
+```bash
+# На VPS после клонирования проекта
+cd /path/to/project
+
+# Создание директорий
+mkdir -p database logs trash cookies
+
+# Установка прав (важно для SQLite)
+chmod -R 755 .
+chmod -R 777 database logs trash cookies
+
+# Если используете не-root пользователя
+sudo chown -R $USER:$USER .
+```
+
+### 5. Настройка firewall (если включен)
+
+```bash
+# Для Ubuntu с ufw
+sudo ufw allow 22/tcp  # SSH
+sudo ufw allow 443/tcp # HTTPS для Telegram API
+sudo ufw allow 80/tcp  # HTTP если нужно
+sudo ufw enable
+```
+
+### 6. Специфичные настройки для headless
+
+В `.env` убедитесь:
+```env
+USE_HEADLESS=true
+BROWSER_CHANNEL=chromium  # НЕ chrome на сервере
+```
+
+### 7. docker-compose.yml для продакшена
+
+```yaml
+version: '3.8'
+
+services:
+  avito-parser-bot:
+    build: .
+    container_name: avito-parser-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./database:/app/database
+      - ./logs:/app/logs
+      - ./trash:/app/trash
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=Europe/Moscow  # Ваша временная зона
+    networks:
+      - parser-network
+    deploy:
+      resources:
+        limits:
+          memory: 2G  # Ограничение памяти
+        reservations:
+          memory: 512M
+
+networks:
+  parser-network:
+    driver: bridge
+```
+
+## Чек-лист запуска на VPS
+
+```bash
+# 1. Клонирование проекта
+git clone <your-repo> avito-parser
+cd avito-parser
+
+# 2. Создание .env из примера
+cp .env.example .env
+nano .env  # Добавьте токены
+
+# 3. Создание директорий
+mkdir -p database logs trash cookies
+chmod -R 777 database logs trash cookies
+
+# 4. Сборка и запуск
+docker compose build
+docker compose up -d
+
+# 5. Проверка логов
+docker compose logs -f
+
+# 6. Проверка статуса
+docker ps
+```
+
+## Возможные проблемы и решения
+
+### Проблема: "Chrome executable not found"
+```bash
+# В Dockerfile используйте
+RUN playwright install chromium --with-deps
+```
+
+### Проблема: "Cannot open display"
+```bash
+# В docker-compose.yml добавьте
+environment:
+  - DISPLAY=:99
+  - XVFB_WHD=1920x1080x24
+```
+
+### Проблема: Нехватка памяти
+```bash
+# Добавьте swap если мало RAM
+sudo fallocate -l 2G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+```
+
+### Проблема: Медленная работа Playwright
+В `core/playwright_parser.py` для сервера используйте:
+```python
+browser = p.chromium.launch(
+    headless=True,
+    args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+)
+```
+
+**Итог:** Основная сложность - системные зависимости для Playwright. С правильно настроенным Dockerfile всё должно работать сразу. Рекомендую сначала протестировать на VPS с 2GB+ RAM.

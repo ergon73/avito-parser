@@ -107,5 +107,64 @@ class DatabaseManager:
             self._connection.close()
             logger.debug("Соединение с БД закрыто.")
 
+    # === Дополнительные методы для Telegram-бота ===
+    def get_listings_count(self) -> int:
+        """Возвращает количество объектов в базе"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM listings")
+            count = cursor.fetchone()[0]
+            conn.close()
+            return count
+        except Exception as e:
+            logger.error(f"Ошибка подсчета объектов: {e}")
+            return 0
+
+    def get_listings_page(self, page: int = 1, page_size: int = 5) -> list:
+        """Возвращает страницу объектов"""
+        offset = (page - 1) * page_size
+        try:
+            conn = self._get_connection()
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+            SELECT id, url, title, price, address, description
+            FROM listings
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
+            """,
+                (page_size, offset),
+            )
+
+            rows = cursor.fetchall()
+            conn.close()
+            return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Ошибка получения страницы: {e}")
+            return []
+
+    def get_listing_by_id(self, listing_id: int) -> dict:
+        """Возвращает объект по ID"""
+        try:
+            conn = self._get_connection()
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM listings WHERE id = ?",
+                (listing_id,),
+            )
+            row = cursor.fetchone()
+            conn.close()
+            return dict(row) if row else None
+        except Exception as e:
+            logger.error(f"Ошибка получения объекта {listing_id}: {e}")
+            return None
+
+    # Вспомогательный метод для кратковременных подключений
+    def _get_connection(self) -> sqlite3.Connection:
+        return sqlite3.connect(self.db_path)
+
 # Создаем единый экземпляр для всего приложения
 db_manager = DatabaseManager()

@@ -10,3 +10,15 @@ services:
     # Подключаем .env файл для конфигурации
     env_file:
       - .env
+
+  avito-parser-bot:
+    build: .
+    container_name: avito-parser-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./database:/app/database
+      - ./logs:/app/logs
+      - ./trash:/app/trash
+    command: python telegram_bot/bot.py

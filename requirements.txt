@@ -4,3 +4,5 @@ loguru
 beautifulsoup4
 lxml
 curl-cffi
+pyTelegramBotAPI>=4.14.0
+APScheduler>=3.10.4
