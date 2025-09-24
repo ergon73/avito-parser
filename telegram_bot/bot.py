@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from loguru import logger
 import telebot
+from telebot import apihelper
 
 # Добавляем корень проекта в путь
 sys.path.append(str(Path(__file__).parent.parent))
@@ -33,7 +34,11 @@ def main():
         logger.info("Добавьте в .env: TELEGRAM_BOT_TOKEN=ваш_токен_от_BotFather")
         sys.exit(1)
 
-    bot = telebot.TeleBot(token, parse_mode='HTML')
+    # Увеличиваем таймауты Telegram API (исправляет Read timed out / query is too old)
+    apihelper.CONNECT_TIMEOUT = 30
+    apihelper.READ_TIMEOUT = 60
+
+    bot = telebot.TeleBot(token, parse_mode='HTML', threaded=True)
 
     register_handlers(bot)
 
@@ -41,7 +46,8 @@ def main():
     logger.info("Нажмите Ctrl+C для остановки")
 
     try:
-        bot.polling(none_stop=True, interval=1)
+        # Более устойчивый режим long polling
+        bot.infinity_polling(timeout=60, long_polling_timeout=60, skip_pending=True)
     except KeyboardInterrupt:
         logger.info("Бот остановлен пользователем")
     except Exception as e:

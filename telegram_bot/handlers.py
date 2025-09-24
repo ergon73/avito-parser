@@ -81,9 +81,15 @@ def register_handlers(bot):
 
             elif data == "run_parser":
                 if parser_runner.is_running:
-                    bot.answer_callback_query(call.id, "⚠️ Парсер уже работает!", show_alert=True)
+                    try:
+                        bot.answer_callback_query(call.id, "⚠️ Парсер уже работает!", show_alert=True)
+                    except Exception:
+                        pass
                 else:
-                    bot.answer_callback_query(call.id, "🚀 Запускаю парсер...")
+                    try:
+                        bot.answer_callback_query(call.id, "🚀 Запускаю парсер...")
+                    except Exception:
+                        pass
 
                     def callback(status, message):
                         if status == "started":
@@ -119,7 +125,10 @@ def register_handlers(bot):
 
         except Exception as e:
             logger.error(f"Ошибка обработки callback: {e}")
-            bot.answer_callback_query(call.id, "Произошла ошибка", show_alert=True)
+            try:
+                bot.answer_callback_query(call.id, "Произошла ошибка", show_alert=True)
+            except Exception:
+                pass
 
 
 def show_journal(bot, chat_id, message_id, page: int = 1):
