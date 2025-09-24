@@ -1,0 +1,6 @@
+playwright
+python-dotenv
+loguru
+beautifulsoup4
+lxml
+curl-cffi

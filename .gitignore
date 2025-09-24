@@ -1,0 +1,12 @@
+.venv/
+venv/
+.env
+__pycache__/
+*.pyc
+trash/*.html
+cookies/*.json
+logs/*.log
+.DS_Store
+.idea/
+.vscode/
+.cursor/

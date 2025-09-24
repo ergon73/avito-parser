@@ -1,0 +1,153 @@
+Да, база данных выглядит значительно лучше\! Данные по ссылкам, заголовкам, ценам, описаниям и, что особенно важно, **изображениям** теперь успешно извлекаются и сохраняются. Это отличный прогресс.
+
+Однако есть один заметный нюанс, который стоит исправить для идеальной чистоты данных.
+
+-----
+
+### Основная проблема: Адрес и дата в одном поле
+
+Если посмотреть на столбец `address` в вашей базе данных, видно, что к адресу "приклеилась" дата публикации объявления.
+
+**Пример из вашей БД:**
+
+  * `Оренбургская обл., ОрскВчера`
+  * `Пензенская обл., Пенза, р-н Железнодорожный7 дней назад`
+
+Это происходит потому, что CSS-селектор, который ищет адрес, захватывает слишком широкий блок HTML, включая соседний элемент с датой.
+
+-----
+
+### Решение
+
+Чтобы это исправить, нужно сделать селектор для адреса более точным. Я подготовил для вас новый файл с инструкциями для Cursor. Он внесёт небольшое, но важное изменение в ваш парсер.
+
+Скопируйте содержимое ниже в новый файл `avito_selector_fix.md` и передайте его Cursor.
+
+-----
+
+# avito\_selector\_fix.md: Финальная корректировка селекторов Avito
+
+## ЦЕЛЬ
+
+Откорректировать файл `services/avito_processor.py`, чтобы разделить адрес и дату публикации, которые сейчас ошибочно попадают в одно поле. Это обеспечит максимальную чистоту и корректность данных в базе SQLite.
+
+-----
+
+## ШАГ 1: ОБНОВЛЕНИЕ ЛОГИКИ ПАРСИНГА АДРЕСА
+
+Полностью замените содержимое файла `services/avito_processor.py` на код ниже. В него внесено два улучшения:
+
+1.  **Точный селектор для адреса**, который теперь находит только геолокацию.
+2.  Более корректная обработка отсутствующего описания (теперь будет `NULL` в базе, а не текст "Описание отсутствует").
+
+<!-- end list -->
+
+```python
+from bs4 import BeautifulSoup
+from typing import List
+from database.models import Listing
+from config.settings import logger
+from urllib.parse import urljoin
+
+class AvitoProcessor:
+    """Извлекает структурированные данные из HTML-кода страницы Avito."""
+
+    def __init__(self, base_url: str):
+        self.base_url = base_url
+
+    def process_html(self, html: str) -> List[Listing]:
+        """
+        Основной метод для парсинга HTML.
+        Находит все объявления на странице и извлекает из них данные.
+        """
+        soup = BeautifulSoup(html, 'lxml')
+        listings = []
+        
+        items_container = soup.find("div", {"data-marker": "catalog-serp"})
+        if not items_container:
+            logger.warning("Основной контейнер с объявлениями ('catalog-serp') не найден.")
+            return []
+
+        items = items_container.find_all("div", {"data-marker": "item"}, recursive=False)
+        logger.info(f"Найдено {len(items)} карточек объявлений на странице.")
+
+        for item_soup in items:
+            try:
+                if item_soup.find("div", {"data-marker": "promo-item"}):
+                    continue
+                
+                listing = self._parse_item(item_soup)
+                if listing and listing.url:
+                    listings.append(listing)
+            except Exception as e:
+                logger.error(f"Ошибка при обработке карточки объявления: {e}")
+        
+        return listings
+
+    def _get_text(self, soup: BeautifulSoup, tag: str, attrs: dict) -> str:
+        """Безопасно извлекает текст из тега."""
+        element = soup.find(tag, attrs)
+        if not element:
+            return None
+        
+        if tag == "meta":
+            return element.get('content', '').strip()
+            
+        return element.text.strip()
+
+    def _parse_images(self, item_soup: BeautifulSoup) -> List[str]:
+        """
+        Извлекает ссылки на изображения из карусели, выбирая самые большие.
+        """
+        images = []
+        gallery_container = item_soup.find('div', {'data-marker': 'item-photo'})
+        if not gallery_container:
+            return []
+            
+        img_tags = gallery_container.find_all("img")
+        
+        for img in img_tags[:3]:
+            if 'srcset' in img.attrs and img['srcset']:
+                largest_image_url = img['srcset'].split(',')[-1].strip().split(' ')[0]
+                images.append(largest_image_url)
+            elif 'src' in img.attrs:
+                 images.append(img['src'])
+                 
+        return images
+
+    def _parse_item(self, item_soup: BeautifulSoup) -> Listing:
+        """Извлекает данные из одной карточки объявления."""
+        
+        link_tag = item_soup.find("a", {"data-marker": "item-title"})
+        if not link_tag or not link_tag.has_attr('href'):
+            return None
+
+        relative_url = link_tag['href']
+        absolute_url = urljoin(self.base_url, relative_url)
+        
+        title = self._get_text(item_soup, "h2", {"data-marker": "item-title"})
+        price = self._get_text(item_soup, "meta", {"itemprop": "price"})
+        
+        description_div = item_soup.select_one('[class*="iva-item-descriptionStep"]')
+        description = description_div.get_text(strip=True) if description_div else None
+
+        # ИСПРАВЛЕННЫЙ СЕЛЕКТОР: Ищет конкретный блок с геолокацией, игнорируя дату.
+        address_div = item_soup.select_one('div[class*="geo-root-"]')
+        address = address_div.get_text(strip=True) if address_div else None
+
+        images = self._parse_images(item_soup)
+
+        return Listing(
+            url=absolute_url,
+            title=title,
+            price=price,
+            address=address,
+            description=description,
+            images=images
+        )
+
+```
+
+-----
+
+После применения этого исправления ваша база данных будет содержать идеально структурированные и чистые данные. 👍
